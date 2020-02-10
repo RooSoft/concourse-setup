@@ -1,0 +1,71 @@
+#! /bin/bash
+
+# issue commands with arguments to stdout
+set -x
+
+# fail fast
+trap 'displayError' ERR
+
+# create working directories
+mkdir -p /opt/concourse/keys
+mkdir -p /opt/concourse/worker
+
+# copy keys
+scp root@192.168.13.60:/root/concourse/keys/tsa_host_key.pub /opt/concourse/keys/.
+scp root@192.168.13.60:/root/concourse/keys/worker_key /opt/concourse/keys/.
+
+# setup firewall
+apt-get install firewalld
+systemctl enable firewalld
+systemctl start firewalld
+ufw disable
+
+cat << 'EOF' >> /etc/firewalld/services/concourse.xml
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <short>concourse</short>
+  <description>concourse</description>
+  <port protocol="tcp" port="7777"/>
+  <port protocol="tcp" port="7788"/>
+  <port protocol="tcp" port="7799"/>
+</service>
+EOF
+firewall-cmd --zone=public --add-service concourse
+firewall-cmd --zone=public --add-service concourse --permanent
+
+# setup environment variables
+cat << 'EOF' >> /etc/environment
+CONCOURSE_WORK_DIR=/opt/concourse/worker
+CONCOURSE_TSA_HOST=192.168.13.60:2222
+CONCOURSE_TSA_PUBLIC_KEY=/opt/concourse/keys/tsa_host_key.pub
+CONCOURSE_TSA_WORKER_PRIVATE_KEY=/opt/concourse/keys/worker_key
+EOF
+
+# install binaries
+wget https://github.com/concourse/concourse/releases/download/v5.8.0/concourse-5.8.0-linux-amd64.tgz
+
+tar -zxf concourse-5.8.0-linux-amd64.tgz -C /usr/local
+
+rm concourse-5.8.0-linux-amd64.tgz
+
+# configure systemd
+cat << 'EOF' >> /etc/systemd/system/concourse.service2
+[Unit]
+Description = start concourse
+After = network.target
+
+[Service]
+Type = simple
+ExecStart = /usr/local/concourse/bin/concourse worker
+Restart = always
+RestartSec = 3s
+TasksMax = infinity
+MemoryLimit = infinity
+EnvironmentFile=/etc/environment
+
+[Install]
+WantedBy = multi-user.target
+EOF
+systemctl start concourse
+systemctl enable concourse
+
