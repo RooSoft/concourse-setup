@@ -15,7 +15,8 @@ scp root@192.168.13.60:/root/concourse/keys/tsa_host_key.pub /opt/concourse/keys
 scp root@192.168.13.60:/root/concourse/keys/worker_key /opt/concourse/keys/.
 
 # setup firewall
-apt-get install firewalld
+apt-get update
+apt-get -y install firewalld
 systemctl enable firewalld
 systemctl start firewalld
 ufw disable
@@ -30,6 +31,7 @@ cat << 'EOF' >> /etc/firewalld/services/concourse.xml
   <port protocol="tcp" port="7799"/>
 </service>
 EOF
+firewall-cmd --reload
 firewall-cmd --zone=public --add-service concourse
 firewall-cmd --zone=public --add-service concourse --permanent
 
@@ -49,7 +51,7 @@ tar -zxf concourse-5.8.0-linux-amd64.tgz -C /usr/local
 rm concourse-5.8.0-linux-amd64.tgz
 
 # configure systemd
-cat << 'EOF' >> /etc/systemd/system/concourse.service2
+cat << 'EOF' >> /etc/systemd/system/concourse.service
 [Unit]
 Description = start concourse
 After = network.target
