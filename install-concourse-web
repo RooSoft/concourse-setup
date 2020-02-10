@@ -1,0 +1,74 @@
+#! /bin/bash
+
+# issue commands with arguments to stdout
+set -x
+
+# fail fast
+trap 'displayError' ERR
+
+# setup firewall
+apt-get update
+apt-get -y install firewalld
+systemctl enable firewalld
+systemctl start firewalld
+ufw disable
+
+cat << 'EOF' >> /etc/firewalld/services/concourse.xml
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <short>concourse</short>
+  <description>Concourse web</description>
+  <port protocol="tcp" port="8080"/>
+  <port protocol="tcp" port="2222"/>
+</service>
+EOF
+firewall-cmd --reload
+firewall-cmd --zone=public --add-service concourse
+firewall-cmd --zone=public --add-service concourse --permanent
+
+# setup environment variables
+cat << 'EOF' >> /etc/environment
+CONCOURSE_ADD_LOCAL_USER=admin:dURP42ndCLJ3iPEJN,roo:emF2nLvmWN4Reqhq4
+CONCOURSE_MAIN_TEAM_LOCAL_USER=admin
+
+CONCOURSE_SESSION_SIGNING_KEY=/root/concourse/keys/session_signing_key
+CONCOURSE_TSA_HOST_KEY=/root/concourse/keys/tsa_host_key
+CONCOURSE_TSA_AUTHORIZED_KEYS=/root/concourse/keys/authorized_worker_keys
+
+CONCOURSE_POSTGRES_HOST=192.168.13.20
+CONCOURSE_POSTGRES_PORT=5432
+CONCOURSE_POSTGRES_DATABASE=atc_baremetal
+CONCOURSE_POSTGRES_USER=concourse
+CONCOURSE_POSTGRES_PASSWORD=XpnCx7FZCHndw3z8t
+
+CONCOURSE_EXTERNAL_URL=http://192.168.13.60:8080
+EOF
+
+# install binaries
+wget https://github.com/concourse/concourse/releases/download/v5.8.0/concourse-5.8.0-linux-amd64.tgz
+
+tar -zxf concourse-5.8.0-linux-amd64.tgz -C /usr/local
+
+rm concourse-5.8.0-linux-amd64.tgz
+
+# configure systemd
+cat << 'EOF' >> /etc/systemd/system/concourse.service
+[Unit]
+Description = start concourse
+After = network.target
+
+[Service]
+Type = simple
+ExecStart = /usr/local/concourse/bin/concourse web
+Restart = always
+RestartSec = 3s
+TasksMax = infinity
+MemoryLimit = infinity
+EnvironmentFile=/etc/environment
+
+[Install]
+WantedBy = multi-user.target
+EOF
+systemctl start concourse
+systemctl enable concourse
+
